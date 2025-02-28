@@ -28,7 +28,7 @@ scale-info = { features = [
 smallvec = { workspace = true, default-features = true }
 docify = { workspace = true }
 serde_json = { workspace = true, default-features = false }
-pallet-parachain-template.workspace = true
+pallet-balance-game.workspace = true
 frame-benchmarking = { optional = true, workspace = true }
 frame-executive.workspace = true
 frame-metadata-hash-extension.workspace = true
@@ -103,7 +103,7 @@ std = [
 	"pallet-balances/std",
 	"pallet-collator-selection/std",
 	"pallet-message-queue/std",
-	"pallet-parachain-template/std",
+	"pallet-balance-game/std",
 	"pallet-session/std",
 	"pallet-sudo/std",
 	"pallet-timestamp/std",
@@ -147,7 +147,7 @@ runtime-benchmarks = [
 	"pallet-balances/runtime-benchmarks",
 	"pallet-collator-selection/runtime-benchmarks",
 	"pallet-message-queue/runtime-benchmarks",
-	"pallet-parachain-template/runtime-benchmarks",
+	"pallet-balance-game/runtime-benchmarks",
 	"pallet-sudo/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
 	"pallet-xcm/runtime-benchmarks",
@@ -173,7 +173,7 @@ try-runtime = [
 	"pallet-balances/try-runtime",
 	"pallet-collator-selection/try-runtime",
 	"pallet-message-queue/try-runtime",
-	"pallet-parachain-template/try-runtime",
+	"pallet-balance-game/try-runtime",
 	"pallet-session/try-runtime",
 	"pallet-sudo/try-runtime",
 	"pallet-timestamp/try-runtime",

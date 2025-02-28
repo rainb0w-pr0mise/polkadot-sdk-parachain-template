@@ -1,5 +1,5 @@
 [package]
-name = "pallet-parachain-template"
+name = "pallet-balance-game"
 description = "FRAME pallet template for defining custom runtime logic."
 version = "0.1.0"
 license = "Unlicense"
@@ -23,6 +23,8 @@ frame-benchmarking = { optional = true, workspace = true }
 frame-support.workspace = true
 frame-system.workspace = true
 sp-runtime.workspace = true
+log.workspace = true
+pallet-balances = { workspace = true }
 
 [dev-dependencies]
 sp-core = { default-features = true, workspace = true }
@@ -34,20 +36,23 @@ runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
 ]
 std = [
 	"codec/std",
 	"scale-info/std",
-
+	"log/std",
 	"frame-benchmarking?/std",
 	"frame-support/std",
 	"frame-system/std",
+	"pallet-balances/std",
 
 	"sp-runtime/std",
 ]
 try-runtime = [
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
+	"pallet-balances/try-runtime",
 	"sp-runtime/try-runtime",
 ]
