@@ -1,47 +1,35 @@
 //! # Balance Game Pallet
 //!
-//! A pallet demonstrating concepts, APIs and structures common to most FRAME runtimes in an interactive game.
+//! A Substrate pallet implementing an interactive balance-based game. Users can accumulate, set, and clear temporary balances,
+//! and update their actual balances. The pallet includes a win condition based on a "magic number," where users can win if their
+//! balance or the total balance across all users reaches the magic number. Operations are tracked to ensure limits are not exceeded.
 //!
-//! **This pallet serves as an example and is not meant to be used in production.**
+//! **This pallet is a demonstration of FRAME concepts and is not intended for production use.**
 //!
-//! > Made with *Substrate*, for *Polkadot*.
+//! > Built with *Substrate* for *Polkadot*.
 //!
-//! A pallet with minimal functionality to help developers understand the essential components of
-//! writing a FRAME pallet.
-//!
-//! Each pallet section is annotated with an attribute using the `#[pallet::...]` procedural macro.
-//! This macro generates the necessary code for a pallet to be aggregated into a FRAME runtime.
-//!
-//! To get started with pallet development, consider using this tutorial:
-//!
-//! <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html>
-//!
-//! And reading the main documentation of the `frame` crate:
-//!
-//! <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/polkadot_sdk/frame_runtime/index.html>
-//!
-//! And looking at the frame [`kitchen-sink`](https://paritytech.github.io/polkadot-sdk/master/pallet_example_kitchensink/index.html)
-//! pallet, a showcase of all pallet macros.
+//! ### Key Features
+//! - **Temporary Balances**: Users can accumulate and clear temporary balances.
+//! - **Balance Updates**: Temporary balances can be transferred to actual balances.
+//! - **Win Condition**: Users win if their balance or the total balance reaches a predefined "magic number."
+//! - **Operation Tracking**: Limits the number of operations per block to prevent abuse.
+//! - **Leaderboard**: Tracks users who have won the game.
 //!
 //! ### Pallet Sections
+//! - **Configuration**: Defines types and parameters like `MagicNumber` and `OperationMax`.
+//! - **Storage**: Manages temporary balances, actual balances, total balances, and operation counts.
+//! - **Events**: Emits events for balance updates, wins, and operation counts.
+//! - **Errors**: Handles errors like insufficient balance, operation limits, and missing entries.
+//! - **Dispatchable Functions**: Provides extrinsics for interacting with the pallet.
+//! - **Helper Functions**: Implements logic for accumulating balances, tracking operations, and checking win conditions.
 //!
-//! - A **configuration trait** that defines the types and parameters which the pallet depends on
-//!   (denoted by the `#[pallet::config]` attribute). See: [`Config`].
-//! - A **means to store pallet-specific data** (denoted by the `#[pallet::storage]` attribute).
-//!   See: [`storage_types`].
-//! - A **declaration of the events** this pallet emits (denoted by the `#[pallet::event]`
-//!   attribute). See: [`Event`].
-//! - A **declaration of the errors** that this pallet can throw (denoted by the `#[pallet::error]`
-//!   attribute). See: [`Error`].
-//! - A **set of dispatchable functions** that define the pallet's functionality (denoted by the
-//!   `#[pallet::call]` attribute). See: [`dispatchables`].
-//! - A **set of helper functions**.
-//! - A simple transaction extension implementation (see:
-//!   [`sp_runtime::traits::TransactionExtension`]) which increases the priority of the
-//!   [`Call::set_temporary_balance`] if it's present and drops any transaction with an encoded length higher
-//!   than 200 bytes.
+//! ### Usage
+//! This pallet is designed to help developers understand FRAME pallet development. For more information, refer to:
+//! - [Your First Pallet Tutorial](https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html)
+//! - [FRAME Documentation](https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/polkadot_sdk/frame_runtime/index.html)
+//! - [Kitchen Sink Pallet](https://paritytech.github.io/polkadot-sdk/master/pallet_example_kitchensink/index.html)
 //!
-//! Run `cargo doc --package pallet-template --open` to view this pallet's documentation.
+//! Run `cargo doc --package pallet-template --open` to view detailed documentation.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -173,8 +161,10 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-        // `on_initialize` is executed at the beginning of the block before any extrinsics are
-        // dispatched.
+        /// Resets temporary balances and clears storage at the start of each block.
+        ///
+        /// # Returns
+        /// - The weight consumed by the operation.
         fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
             // Reset temporary balances at the start of each block
             for (key, _) in TemporaryBalance::<T>::iter() {
@@ -187,7 +177,7 @@ pub mod pallet {
             Weight::zero()
         }
 
-        // `on_finalize` is executed at the end of block after all extrinsics are dispatched.
+        /// Performs cleanup and checks the win condition at the end of each block.
         fn on_finalize(_n: BlockNumberFor<T>) {
             // Perform necessary data/state clean up here.
             Self::check_win_condition();
@@ -196,10 +186,17 @@ pub mod pallet {
 
     #[pallet::call(weight(<T as Config>::WeightInfo))]
     impl<T: Config> Pallet<T> {
-        /// This is your public interface. Be extremely careful.
-        /// This is just a simple example of how to interact with the pallet from the external
-        /// world.
-        /// Increasing the value of `TemporaryBalance` by `increase_by`.
+        /// Allows a user to increase their temporary balance by a specified amount.
+        ///
+        /// # Arguments
+        /// - `who`: The origin of the call (must be a signed account).
+        /// - `increase_by`: The amount by which to increase the temporary balance.
+        ///
+        /// # Errors
+        /// - `NoEntryForSender`: If the caller does not have an existing temporary balance.
+        ///
+        /// # Events
+        /// - `AccumulateTemporaryBalance`: Emitted when the temporary balance is successfully increased.
         #[pallet::call_index(0)]
         #[pallet::weight(<T as pallet::Config>::WeightInfo::accumulate_temporary_balance())]
         pub fn accumulate_temporary_balance(
@@ -209,16 +206,18 @@ pub mod pallet {
             Self::do_accumulate_temporary_balance(who, increase_by)
         }
 
-        /// A privileged call; in this case it resets our TemporaryBalance value to something new.
-        // Implementation of a privileged call. The `origin` parameter is ROOT because
-        // it's not (directly) from an extrinsic, but rather the system as a whole has decided
-        // to execute it. Different runtimes have different reasons for allow privileged
-        // calls to be executed - we don't need to care why. Because it's privileged, we can
-        // assume it's a one-off operation and substantial processing/storage/memory can be used
-        // without worrying about gameability or attack scenarios.
-        //
-        // The weight for this extrinsic we use our own weight object `WeightForSetTemporaryBalance` to
-        // determine its weight
+        /// A privileged call to set a user's temporary balance to a specific value.
+        ///
+        /// # Arguments
+        /// - `origin`: The origin of the call (must be root).
+        /// - `who`: The account whose temporary balance will be set.
+        /// - `new_value`: The new value for the temporary balance.
+        ///
+        /// # Errors
+        /// - `ValueAlreadySet`: If the user already has a temporary balance.
+        ///
+        /// # Events
+        /// - `SetTemporaryBalance`: Emitted when the temporary balance is successfully set.
         #[pallet::call_index(1)]
         #[pallet::weight(WeightForSetTemporaryBalance::<T>(<BalanceOf<T>>::from(100u32)))]
         pub fn set_temporary_balance(
@@ -253,6 +252,14 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Clears the temporary balance for a specified user.
+        ///
+        /// # Arguments
+        /// - `origin`: The origin of the call (must be a signed account).
+        /// - `who`: The account whose temporary balance will be cleared.
+        ///
+        /// # Events
+        /// - `TemporaryBalanceCleared`: Emitted when the temporary balance is successfully cleared.
         #[pallet::call_index(2)]
         #[pallet::weight(<T as pallet::Config>::WeightInfo::clear_temporary_balance())]
         pub fn clear_temporary_balance(
@@ -269,6 +276,16 @@ pub mod pallet {
             Ok(())
         }
 
+        /// Transfers the temporary balance to the user's actual balance.
+        ///
+        /// # Arguments
+        /// - `origin`: The origin of the call (must be a signed account).
+        ///
+        /// # Errors
+        /// - `TemporaryBalanceNotFound`: If the caller does not have a temporary balance.
+        ///
+        /// # Events
+        /// - `BalanceUpdated`: Emitted when the balance is successfully updated.
         #[pallet::call_index(3)]
         #[pallet::weight(<T as pallet::Config>::WeightInfo::update_balance())]
         pub fn update_balance(origin: OriginFor<T>) -> DispatchResult {
@@ -394,7 +411,10 @@ pub mod pallet {
         pub temporary_balance: Vec<(T::AccountId, T::Balance)>,
     }
 
-    // The build of genesis for the pallet.
+    /// Initializes the pallet's state during blockchain genesis.
+    ///
+    /// # Arguments
+    /// - `self`: The genesis configuration containing initial temporary balances.
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
@@ -449,9 +469,16 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    // Each operation has a specific key..
-    // This should be a private function that records main extrinsic
-    // operatrions.
+    /// Records the number of operations performed for a specific key and ensures the operation limit is not exceeded.
+    ///
+    /// # Arguments
+    /// - `key`: The operation key to track.
+    ///
+    /// # Errors
+    /// - `OperationLimitExceeded`: If the operation limit is exceeded.
+    ///
+    /// # Events
+    /// - `OperationCountUpdated`: Emitted when the operation count is updated.
     fn record_operation(key: u32) -> DispatchResult {
         // Fetch the current count from the storage.
         let current_count = OperationCounts::<T>::get(key).unwrap_or_default();
@@ -472,9 +499,11 @@ impl<T: Config> Pallet<T> {
         Ok(())
     }
 
-    /// Checks if a player has won the game based on specific criteria.
     /// Checks if any player has reached the magic number in their balance or if the total balance
-    /// reaches the magic number, and emits events accordingly.
+    /// reaches the magic number. If so, updates the leaderboard and emits a `GameWon` event.
+    ///
+    /// # Events
+    /// - `GameWon`: Emitted when a player wins the game.
     pub fn check_win_condition() {
         let total_balance = TotalBalance::<T>::get();
 
