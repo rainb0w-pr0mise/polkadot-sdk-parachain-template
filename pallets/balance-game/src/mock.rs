@@ -85,7 +85,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
     // Initialize your pallet's genesis configuration
     crate::GenesisConfig::<Test> {
-        dummy: Default::default(),
+        temporary_balance: Default::default(),
     }
     .assimilate_storage(&mut storage)
     .unwrap();

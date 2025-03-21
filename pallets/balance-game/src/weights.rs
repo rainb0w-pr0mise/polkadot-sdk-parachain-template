@@ -47,7 +47,9 @@ use core::marker::PhantomData;
 /// Weight functions needed for pallet_example_basic.
 pub trait WeightInfo {
 	fn set_dummy_benchmark() -> Weight;
-	fn accumulate_dummy() -> Weight;
+	fn accumulate_temporary_balance() -> Weight;
+	fn clear_temporary_balance() -> Weight;
+	fn update_balance() -> Weight;
 	fn sort_vector(x: u32, ) -> Weight;
 }
 
@@ -60,7 +62,17 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 			.saturating_add(T::DbWeight::get().writes(1 as u64))
 	}
 	// Storage: BasicExample Dummy (r:1 w:1)
-	fn accumulate_dummy() -> Weight {
+	fn accumulate_temporary_balance() -> Weight {
+		Weight::from_parts(18_000_000 as u64, 0)
+			.saturating_add(T::DbWeight::get().reads(1 as u64))
+			.saturating_add(T::DbWeight::get().writes(1 as u64))
+	}
+	fn clear_temporary_balance() -> Weight {
+		Weight::from_parts(18_000_000 as u64, 0)
+			.saturating_add(T::DbWeight::get().reads(1 as u64))
+			.saturating_add(T::DbWeight::get().writes(1 as u64))
+	}
+	fn update_balance() -> Weight {
 		Weight::from_parts(18_000_000 as u64, 0)
 			.saturating_add(T::DbWeight::get().reads(1 as u64))
 			.saturating_add(T::DbWeight::get().writes(1 as u64))
@@ -75,13 +87,21 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
 // For backwards compatibility and tests
 impl WeightInfo for () {
-	// Storage: BasicExample Dummy (r:0 w:1)
 	fn set_dummy_benchmark() -> Weight {
 		Weight::from_parts(19_000_000 as u64, 0)
 			.saturating_add(RocksDbWeight::get().writes(1 as u64))
 	}
-	// Storage: BasicExample Dummy (r:1 w:1)
-	fn accumulate_dummy() -> Weight {
+	fn accumulate_temporary_balance() -> Weight {
+		Weight::from_parts(18_000_000 as u64, 0)
+			.saturating_add(RocksDbWeight::get().reads(1 as u64))
+			.saturating_add(RocksDbWeight::get().writes(1 as u64))
+	}
+	fn clear_temporary_balance() -> Weight {
+		Weight::from_parts(18_000_000 as u64, 0)
+			.saturating_add(RocksDbWeight::get().reads(1 as u64))
+			.saturating_add(RocksDbWeight::get().writes(1 as u64))
+	}
+	fn update_balance() -> Weight {
 		Weight::from_parts(18_000_000 as u64, 0)
 			.saturating_add(RocksDbWeight::get().reads(1 as u64))
 			.saturating_add(RocksDbWeight::get().writes(1 as u64))

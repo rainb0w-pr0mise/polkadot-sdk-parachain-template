@@ -25,8 +25,6 @@
 //!
 //! ### Pallet Sections
 //!
-//! The pallet sections in this template are:
-//!
 //! - A **configuration trait** that defines the types and parameters which the pallet depends on
 //!   (denoted by the `#[pallet::config]` attribute). See: [`Config`].
 //! - A **means to store pallet-specific data** (denoted by the `#[pallet::storage]` attribute).
@@ -40,7 +38,7 @@
 //! - A **set of helper functions**.
 //! - A simple transaction extension implementation (see:
 //!   [`sp_runtime::traits::TransactionExtension`]) which increases the priority of the
-//!   [`Call::set_dummy`] if it's present and drops any transaction with an encoded length higher
+//!   [`Call::set_temporary_balance`] if it's present and drops any transaction with an encoded length higher
 //!   than 200 bytes.
 //!
 //! Run `cargo doc --package pallet-template --open` to view this pallet's documentation.
@@ -90,7 +88,7 @@ const MILLICENTS: u32 = 1_000_000_000;
 // <https://paritytech.github.io/polkadot-sdk/master/pallet_example_kitchensink/index.html>
 // <https://paritytech.github.io/polkadot-sdk/master/frame_support/pallet_macros/index.html>
 
-// A custom weight calculator tailored for the dispatch call `set_dummy()`. This actually examines
+// A custom weight calculator tailored for the dispatch call `set_temporary_balance()`. This actually examines
 // the arguments and makes a decision based upon them.
 //
 // The `WeightData<T>` trait has access to the arguments of the dispatch that it wants to assign a
@@ -100,9 +98,9 @@ const MILLICENTS: u32 = 1_000_000_000;
 // replace `T` with a tuple of the dispatch arguments. This is exactly how we will craft the
 // implementation below.
 //
-// The rules of `WeightForSetDummy` are as follows:
+// The rules of `WeightForSetTemporaryBalance` are as follows:
 // - The final weight of each dispatch is calculated as the argument of the call multiplied by the
-//   parameter given to the `WeightForSetDummy`'s constructor.
+//   parameter given to the `WeightForSetTemporaryBalance`'s constructor.
 // - assigns a dispatch class `operational` if the argument of the call is more than 1000.
 //
 // More information can be read at:
@@ -110,10 +108,10 @@ const MILLICENTS: u32 = 1_000_000_000;
 //
 // Manually configuring weight is an advanced operation and what you really need may well be
 //   fulfilled by running the benchmarking toolchain. Refer to `benchmarking.rs` file.
-struct WeightForSetDummy<T: pallet_balances::Config>(BalanceOf<T>);
+struct WeightForSetTemporaryBalance<T: pallet_balances::Config>(BalanceOf<T>);
 
 impl<T: pallet_balances::Config> WeighData<(&AccountIdLookupOf<T>, &BalanceOf<T>)>
-    for WeightForSetDummy<T>
+    for WeightForSetTemporaryBalance<T>
 {
     fn weigh_data(&self, target: (&AccountIdLookupOf<T>, &BalanceOf<T>)) -> Weight {
         let multiplier = self.0;
@@ -124,7 +122,7 @@ impl<T: pallet_balances::Config> WeighData<(&AccountIdLookupOf<T>, &BalanceOf<T>
 }
 
 impl<T: pallet_balances::Config> ClassifyDispatch<(&AccountIdLookupOf<T>, &BalanceOf<T>)>
-    for WeightForSetDummy<T>
+    for WeightForSetTemporaryBalance<T>
 {
     fn classify_dispatch(&self, target: (&AccountIdLookupOf<T>, &BalanceOf<T>)) -> DispatchClass {
         // current_balance + target amount passed into the extrinsic.
@@ -137,7 +135,7 @@ impl<T: pallet_balances::Config> ClassifyDispatch<(&AccountIdLookupOf<T>, &Balan
 }
 
 impl<T: pallet_balances::Config> PaysFee<(&AccountIdLookupOf<T>, &BalanceOf<T>)>
-    for WeightForSetDummy<T>
+    for WeightForSetTemporaryBalance<T>
 {
     fn pays_fee(&self, target: (&AccountIdLookupOf<T>, &BalanceOf<T>)) -> Pays {
         if *target.1 > <BalanceOf<T>>::from(1000u32) {
@@ -157,8 +155,6 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config: pallet_balances::Config + frame_system::Config {
-        // Setting a constant config parameter from the runtime(MagicNumber, the Counted storage
-        // must be cleared before new values are added fo some operation to take place.)
         #[pallet::constant]
         type MagicNumber: Get<Self::Balance>;
 
@@ -169,7 +165,7 @@ pub mod pallet {
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 
         /// Type representing the weight of this pallet
-        type WeightInfo: WeightInfo; // Use pallet_balances::<T>::Pallet::function or storage items...
+        type WeightInfo: WeightInfo;
     }
 
     #[pallet::pallet]
@@ -181,11 +177,11 @@ pub mod pallet {
         // dispatched.
         fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
             // Reset temporary balances at the start of each block
-            for (key, _) in Dummy::<T>::iter() {
-                Dummy::<T>::remove(key.clone());
-                Bar::<T>::remove(key);
+            for (key, _) in TemporaryBalance::<T>::iter() {
+                TemporaryBalance::<T>::remove(key.clone());
+                UserBalances::<T>::remove(key);
             }
-            Foo::<T>::kill();
+            TotalBalance::<T>::kill();
 
             // Return the weight consumed by `on_initialize`
             Weight::zero()
@@ -198,98 +194,22 @@ pub mod pallet {
         }
     }
 
-    // The call declaration. This states the entry points that we handle. The
-    // macro takes care of the marshalling of arguments and dispatch.
-    //
-    // Anyone can have these functions execute by signing and submitting
-    // an extrinsic. Ensure that calls into each of these execute in a time, memory and
-    // using storage space proportional to any costs paid for by the caller or otherwise the
-    // difficulty of forcing the call to happen.
-    //
-    // Generally you'll want to split these into three groups:
-    // - Public calls that are signed by an external account.
-    // - Root calls that are allowed to be made only by the governance system.
-    // - Unsigned calls that can be of two kinds:
-    //   * "Inherent extrinsics" that are opinions generally held by the block authors that build
-    //     child blocks.
-    //   * Unsigned Transactions that are of intrinsic recognizable utility to the network, and are
-    //     validated by the runtime.
-    //
-    // Information about where this dispatch initiated from is provided as the first argument
-    // "origin". As such functions must always look like:
-    //
-    // `fn foo(origin: OriginFor<T>, bar: Bar, baz: Baz) -> DispatchResultWithPostInfo { ... }`
-    //
-    // The `DispatchResultWithPostInfo` is required as part of the syntax (and can be found at
-    // `pallet_prelude::DispatchResultWithPostInfo`).
-    //
-    // There are three entries in the `frame_system::Origin` enum that correspond
-    // to the above bullets: `::Signed(AccountId)`, `::Root` and `::None`. You should always match
-    // against them as the first thing you do in your function. There are three convenience calls
-    // in system that do the matching for you and return a convenient result: `ensure_signed`,
-    // `ensure_root` and `ensure_none`.
     #[pallet::call(weight(<T as Config>::WeightInfo))]
     impl<T: Config> Pallet<T> {
         /// This is your public interface. Be extremely careful.
         /// This is just a simple example of how to interact with the pallet from the external
         /// world.
-        // This just increases the value of `Dummy` by `increase_by`.
-        //
-        // Since this is a dispatched function there are two extremely important things to
-        // remember:
-        //
-        // - MUST NOT PANIC: Under no circumstances (save, perhaps, storage getting into an
-        // irreparably damaged state) must this function panic.
-        // - NO SIDE-EFFECTS ON ERROR: This function must either complete totally (and return
-        // `Ok(())` or it must have no side-effects on storage and return `Err('Some reason')`.
-        //
-        // The first is relatively easy to audit for - just ensure all panickers are removed from
-        // logic that executes in production (which you do anyway, right?!). To ensure the second
-        // is followed, you should do all tests for validity at the top of your function. This
-        // is stuff like checking the sender (`origin`) or that state is such that the operation
-        // makes sense.
-        //
-        // Once you've determined that it's all good, then enact the operation and change storage.
-        // If you can't be certain that the operation will succeed without substantial computation
-        // then you have a classic blockchain attack scenario. The normal way of managing this is
-        // to attach a bond to the operation. As the first major alteration of storage, reserve
-        // some value from the sender's account (`Balances` Pallet has a `reserve` function for
-        // exactly this scenario). This amount should be enough to cover any costs of the
-        // substantial execution in case it turns out that you can't proceed with the operation.
-        //
-        // If it eventually transpires that the operation is fine and, therefore, that the
-        // expense of the checks should be borne by the network, then you can refund the reserved
-        // deposit. If, however, the operation turns out to be invalid and the computation is
-        // wasted, then you can burn it or repatriate elsewhere.
-        //
-        // Security bonds ensure that attackers can't game it by ensuring that anyone interacting
-        // with the system either progresses it or pays for the trouble of faffing around with
-        // no progress.
-        //
-        // If you don't respect these rules, it is likely that your chain will be attackable.
-        //
-        // Each transaction must define a `#[pallet::weight(..)]` attribute to convey a set of
-        // static information about its dispatch. FRAME System and FRAME Executive pallet then use
-        // this information to properly execute the transaction, whilst keeping the total load of
-        // the chain in a moderate rate.
-        //
-        // The parenthesized value of the `#[pallet::weight(..)]` attribute can be any type that
-        // implements a set of traits, namely [`WeighData`], [`ClassifyDispatch`], and
-        // [`PaysFee`]. The first conveys the weight (a numeric representation of pure
-        // execution time and difficulty) of the transaction and the second demonstrates the
-        // [`DispatchClass`] of the call, the third gives whereas extrinsic must pay fees or not.
-        // A higher weight means a larger transaction (less of which can be placed in a single
-        // block).
-        //
-        // The weight for this extrinsic we rely on the auto-generated `WeightInfo` from the
-        // benchmark toolchain.
+        /// Increasing the value of `TemporaryBalance` by `increase_by`.
         #[pallet::call_index(0)]
-        #[pallet::weight(<T as pallet::Config>::WeightInfo::accumulate_dummy())]
-        pub fn accumulate_dummy(who: OriginFor<T>, increase_by: T::Balance) -> DispatchResult {
-            Self::do_accumulate_dummy(who, increase_by)
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::accumulate_temporary_balance())]
+        pub fn accumulate_temporary_balance(
+            who: OriginFor<T>,
+            increase_by: T::Balance,
+        ) -> DispatchResult {
+            Self::do_accumulate_temporary_balance(who, increase_by)
         }
 
-        /// A privileged call; in this case it resets our dummy value to something new.
+        /// A privileged call; in this case it resets our TemporaryBalance value to something new.
         // Implementation of a privileged call. The `origin` parameter is ROOT because
         // it's not (directly) from an extrinsic, but rather the system as a whole has decided
         // to execute it. Different runtimes have different reasons for allow privileged
@@ -297,11 +217,11 @@ pub mod pallet {
         // assume it's a one-off operation and substantial processing/storage/memory can be used
         // without worrying about gameability or attack scenarios.
         //
-        // The weight for this extrinsic we use our own weight object `WeightForSetDummy` to
+        // The weight for this extrinsic we use our own weight object `WeightForSetTemporaryBalance` to
         // determine its weight
         #[pallet::call_index(1)]
-        #[pallet::weight(WeightForSetDummy::<T>(<BalanceOf<T>>::from(100u32)))]
-        pub fn set_dummy(
+        #[pallet::weight(WeightForSetTemporaryBalance::<T>(<BalanceOf<T>>::from(100u32)))]
+        pub fn set_temporary_balance(
             origin: OriginFor<T>,
             who: AccountIdLookupOf<T>,
             #[pallet::compact] new_value: T::Balance,
@@ -309,12 +229,11 @@ pub mod pallet {
             ensure_root(origin)?;
             let who = T::Lookup::lookup(who)?;
 
-            let set_dummy_key: u32 = 1;
+            let set_temporary_balance_key: u32 = 1;
 
-            // assert no value exixsts for that user.
             // Assert no value exists for the user.
             ensure!(
-                Dummy::<T>::get(who.clone()).is_none(),
+                TemporaryBalance::<T>::get(who.clone()).is_none(),
                 Error::<T>::ValueAlreadySet
             );
 
@@ -325,43 +244,44 @@ pub mod pallet {
             info!("New value is now: {:?}", new_value);
 
             // Put the new value into storage.
-            <Dummy<T>>::insert(who, new_value);
-            Self::record_operation(set_dummy_key)?;
+            <TemporaryBalance<T>>::insert(who, new_value);
+            Self::record_operation(set_temporary_balance_key)?;
 
-            Self::deposit_event(Event::SetDummy { balance: new_value });
+            Self::deposit_event(Event::SetTemporaryBalance { balance: new_value });
 
             // All good, no refund.
             Ok(())
         }
 
         #[pallet::call_index(2)]
-        #[pallet::weight(10_000)] // based on how much is cleared the weight calculkated using the custom weight function or// use the wightinfo file.
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::clear_temporary_balance())]
         pub fn clear_temporary_balance(
             origin: OriginFor<T>,
             who: AccountIdLookupOf<T>,
         ) -> DispatchResult {
             let _ = ensure_signed(origin)?;
             let who = T::Lookup::lookup(who)?;
-            let clear_dummy_key: u32 = 2;
+            let clear_temporary_balance_key: u32 = 2;
 
-            Dummy::<T>::remove(&who);
-            Self::record_operation(clear_dummy_key)?;
+            TemporaryBalance::<T>::remove(&who);
+            Self::record_operation(clear_temporary_balance_key)?;
             Self::deposit_event(Event::TempoaryBalanceCleared(who.clone()));
             Ok(())
         }
 
         #[pallet::call_index(3)]
-        #[pallet::weight(10_000)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::update_balance())]
         pub fn update_balance(origin: OriginFor<T>) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
             let update_balance_key: u32 = 3;
 
-            // Get the new balance from Dummy storage
-            let new_balance = Dummy::<T>::get(&who).ok_or(Error::<T>::TempoaryBalanceNotFound)?;
+            // Get the new balance from TemporaryBalance storage
+            let new_balance =
+                TemporaryBalance::<T>::get(&who).ok_or(Error::<T>::TempoaryBalanceNotFound)?;
 
             // Update the user's balance
-            Bar::<T>::try_mutate(&who, |balance| -> DispatchResult {
+            UserBalances::<T>::try_mutate(&who, |balance| -> DispatchResult {
                 // Ensure that the balance is initialized to avoid issues with None
                 let current_balance = balance.unwrap_or_else(Zero::zero);
                 let updated_balance = current_balance.saturating_add(new_balance);
@@ -370,8 +290,8 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            // Update the total balance in Foo storage
-            Foo::<T>::mutate(|total| {
+            // Update the total balance in TotalBalance storage
+            TotalBalance::<T>::mutate(|total| {
                 *total = total.saturating_add(new_balance);
             });
 
@@ -389,12 +309,11 @@ pub mod pallet {
     /// it is optional, it is also possible to provide a custom implementation.
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        // Just a normal `enum`, here's a dummy event to ensure it compiles.
-        /// Dummy event, just here so there's a generic type that's used.
-        AccumulateDummy {
+        /// TemporaryBalance event, just here so there's a generic type that's used.
+        AccumulateTemporaryBalance {
             balance: T::Balance,
         },
-        SetDummy {
+        SetTemporaryBalance {
             balance: T::Balance,
         },
         TempoaryBalanceCleared(T::AccountId),
@@ -410,7 +329,7 @@ pub mod pallet {
         InsufficientBalance,
         ExceedsWithdrawalLimit,
         NoHoldFound,
-        InsufficientAmount, // New error for amount below MILLICENTS
+        InsufficientAmount,
         TempoaryBalanceNotFound,
         OperationLimitExceeded,
     }
@@ -424,45 +343,46 @@ pub mod pallet {
     // Below are examples with the correct methods for each type of storage:
 
     // Example for `StorageMap` using `Twox64Concat` hasher:
-    // `type Dummy<T: Config> = StorageMap<_, Twox64Concat, T::AccountId, T::Balance, OptionQuery>`;
+    // `type TemporaryBalance<T: Config> = StorageMap<_, Twox64Concat, T::AccountId, T::Balance, OptionQuery>`;
     // Methods:
-    // - `Dummy::insert(who: T::AccountId, new_value: T::Balance);`  // Inserts a new value.
-    // - `Dummy::remove(who: &T::AccountId);`                        // Removes the value associated
+    // - `TemporaryBalance::insert(who: T::AccountId, new_value: T::Balance);`  // Inserts a new value.
+    // - `TemporaryBalance::remove(who: &T::AccountId);`                        // Removes the value associated
     //   with the key.
-    // - `Dummy::contains_key(who: &T::AccountId) -> bool;`          // Checks if a key exists.
-    // - `Dummy::get(who: &T::AccountId) -> Option<T::Balance>;`     // Retrieves the value
+    // - `TemporaryBalance::contains_key(who: &T::AccountId) -> bool;`          // Checks if a key exists.
+    // - `TemporaryBalance::get(who: &T::AccountId) -> Option<T::Balance>;`     // Retrieves the value
     //   associated with a key.
 
     // Example for `StorageValue` with `ValueQuery`:
-    // `type Foo<T: Config> = StorageValue<_, T::Balance, ValueQuery>`;
+    // `type TotalBalance<T: Config> = StorageValue<_, T::Balance, ValueQuery>`;
     // Methods:
-    // - `Foo::get() -> T::Balance;`              // Retrieves the stored value.
-    // - `Foo::put(new_value: T::Balance);`       // Stores a new value.
-    // - `Foo::mutate(|v| *v += 1);`              // Mutates the stored value.
-    // - `Foo::kill();`                           // Removes the stored value, sets it to default.
+    // - `TotalBalance::get() -> T::Balance;`              // Retrieves the stored value.
+    // - `TotalBalance::put(new_value: T::Balance);`       // Stores a new value.
+    // - `TotalBalance::mutate(|v| *v += 1);`              // Mutates the stored value.
+    // - `TotalBalance::kill();`                           // Removes the stored value, sets it to default.
 
     // Example for `CountedStorageMap`:
-    // `type CountedMap<T: Config> = CountedStorageMap<_, Blake2_128Concat, u8, u16>`;
+    // `type OperationCounts<T: Config> = CountedStorageMap<_, Blake2_128Concat, u8, u16>`;
     // Methods:
-    // - `CountedMap::insert(key: u8, value: u16);`       // Inserts a key-value pair.
-    // - `CountedMap::remove(key: &u8);`                 // Removes a key-value pair.
-    // - `CountedMap::get(key: &u8) -> Option<u16>;`     // Retrieves the value for a key.
-    // - `CountedMap::iter() -> impl Iterator<Item=(u8, u16)>;` // Iterates over all key-value
+    // - `OperationCounts::insert(key: u8, value: u16);`       // Inserts a key-value pair.
+    // - `OperationCounts::remove(key: &u8);`                 // Removes a key-value pair.
+    // - `OperationCounts::get(key: &u8) -> Option<u16>;`     // Retrieves the value for a key.
+    // - `OperationCounts::iter() -> impl Iterator<Item=(u8, u16)>;` // Iterates over all key-value
     //   pairs.
-    // - `CountedMap::count() -> u32;`                   // Returns the count of stored items.
+    // - `OperationCounts::count() -> u32;`                   // Returns the count of stored items.
     #[pallet::storage]
-    pub(super) type Bar<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, T::Balance>;
+    pub(super) type UserBalances<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, T::Balance>;
     /// Holds tempoary balance.
     #[pallet::storage]
-    pub(super) type Dummy<T: Config> =
+    pub(super) type TemporaryBalance<T: Config> =
         StorageMap<_, Twox64Concat, T::AccountId, T::Balance, OptionQuery>;
     /// Account for an operation to take place(Intents).
     #[pallet::storage]
-    pub type CountedMap<T> = CountedStorageMap<_, Blake2_128Concat, u32, u16>;
+    pub type OperationCounts<T> = CountedStorageMap<_, Blake2_128Concat, u32, u16>;
     /// Store the total value of Balances held in storage, this one uses the query kind:
     /// `ValueQuery`, we'll demonstrate the usage of 'mutate' API.
     #[pallet::storage]
-    pub(super) type Foo<T: Config> = StorageValue<_, T::Balance, ValueQuery>;
+    pub(super) type TotalBalance<T: Config> = StorageValue<_, T::Balance, ValueQuery>;
 
     #[pallet::storage]
     pub(super) type Leaderboard<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, u32>;
@@ -471,15 +391,15 @@ pub mod pallet {
     #[pallet::genesis_config]
     #[derive(frame_support::DefaultNoBound)]
     pub struct GenesisConfig<T: Config> {
-        pub dummy: Vec<(T::AccountId, T::Balance)>,
+        pub temporary_balance: Vec<(T::AccountId, T::Balance)>,
     }
 
     // The build of genesis for the pallet.
     #[pallet::genesis_build]
     impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
         fn build(&self) {
-            for (a, b) in &self.dummy {
-                <Dummy<T>>::insert(a, b);
+            for (a, b) in &self.temporary_balance {
+                <TemporaryBalance<T>>::insert(a, b);
             }
         }
     }
@@ -493,7 +413,7 @@ pub mod pallet {
 impl<T: Config> Pallet<T> {
     // Add public immutables and private mutables.
     #[allow(dead_code)]
-    fn do_accumulate_dummy(
+    fn do_accumulate_temporary_balance(
         origin: frame_system::pallet_prelude::OriginFor<T>,
         increase_by: T::Balance,
     ) -> DispatchResult {
@@ -501,11 +421,11 @@ impl<T: Config> Pallet<T> {
         let who = ensure_signed(origin)?;
         let accumulate_key: u32 = 0;
 
-        // Check if the sender already has an entry in the Dummy map.
+        // Check if the sender already has an entry in the TemporaryBalance map.
         // We want to ensure the sender is the owner of the entry.
-        let current_dummy = Dummy::<T>::get(&who);
+        let current_temporary_balance = TemporaryBalance::<T>::get(&who);
 
-        if current_dummy.is_none() {
+        if current_temporary_balance.is_none() {
             // If no entry exists, we can create a new one or return an error
             // indicating the sender does not own an entry.
             return Err(Error::<T>::NoEntryForSender.into());
@@ -514,27 +434,27 @@ impl<T: Config> Pallet<T> {
         Self::record_operation(accumulate_key)?;
 
         // If an entry exists, we can mutate it.
-        <Dummy<T>>::mutate(&who, |dummy_opt| {
-            if let Some(dummy) = dummy_opt {
+        <TemporaryBalance<T>>::mutate(&who, |temp_bal_opt| {
+            if let Some(temporary_balance) = temp_bal_opt {
                 // Using `saturating_add` to avoid overflow and safely update the value.
-                *dummy = dummy.saturating_add(increase_by);
-                Self::deposit_event(Event::AccumulateDummy {
+                *temporary_balance = temporary_balance.saturating_add(increase_by);
+                Self::deposit_event(Event::AccumulateTemporaryBalance {
                     balance: increase_by,
                 });
             } else {
                 // If it's None, initialize it to the increase value.
-                *dummy_opt = Some(increase_by);
+                *temp_bal_opt = Some(increase_by);
             }
         });
         Ok(())
     }
 
-    // so each operation has a specific key, withdraw operation, set_dummy_operation..
-    // that is what this does.. so this should be a helper function that records main extrinsic
+    // Each operation has a specific key..
+    // This should be a private function that records main extrinsic
     // operatrions.
     fn record_operation(key: u32) -> DispatchResult {
         // Fetch the current count from the storage.
-        let current_count = CountedMap::<T>::get(key).unwrap_or_default();
+        let current_count = OperationCounts::<T>::get(key).unwrap_or_default();
 
         // // Check if the current count exceeds the magic number..
         frame_support::ensure!(
@@ -544,7 +464,7 @@ impl<T: Config> Pallet<T> {
 
         // Increment the count if the limit has not been reached.
         let new_count = current_count + 1;
-        CountedMap::<T>::insert(key, new_count);
+        OperationCounts::<T>::insert(key, new_count);
 
         // Emit an event indicating that the operation count has been updated.
         Self::deposit_event(Event::OperationCountUpdated(key, new_count));
@@ -556,10 +476,10 @@ impl<T: Config> Pallet<T> {
     /// Checks if any player has reached the magic number in their balance or if the total balance
     /// reaches the magic number, and emits events accordingly.
     pub fn check_win_condition() {
-        let total_balance = Foo::<T>::get();
+        let total_balance = TotalBalance::<T>::get();
 
         // Check if any player's balance reaches the magic number and emit event
-        for (account, balance) in Bar::<T>::iter() {
+        for (account, balance) in UserBalances::<T>::iter() {
             if balance == <T as Config>::MagicNumber::get() {
                 Leaderboard::<T>::mutate(&account, |points_opt| {
                     if let Some(points) = points_opt {
@@ -576,7 +496,7 @@ impl<T: Config> Pallet<T> {
 
         // Emit event for all accounts if the total balance reaches the magic number
         if total_balance == <T as Config>::MagicNumber::get() {
-            for (account, balance) in Bar::<T>::iter() {
+            for (account, balance) in UserBalances::<T>::iter() {
                 Leaderboard::<T>::mutate(&account, |points_opt| {
                     if let Some(points) = points_opt {
                         // Using `saturating_add` to avoid overflow and safely update the value.
