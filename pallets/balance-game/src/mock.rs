@@ -1,6 +1,5 @@
+use frame_support::derive_impl;
 use frame_support::traits::ConstU16;
-use frame_support::{derive_impl, weights::constants::RocksDbWeight};
-use frame_system::{mocking::MockBlock, GenesisConfig};
 use sp_core::H256;
 use sp_runtime::traits::{BlakeTwo256, IdentityLookup};
 use sp_runtime::{traits::ConstU64, BuildStorage};

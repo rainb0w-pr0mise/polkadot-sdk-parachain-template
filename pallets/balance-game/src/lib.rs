@@ -36,17 +36,10 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use codec::{Decode, Encode};
 use frame_support::Blake2_128Concat;
-use frame_support::{
-    dispatch::{ClassifyDispatch, DispatchClass, DispatchResult, Pays, PaysFee, WeighData},
-    traits::{Get, IsSubType},
-    weights::Weight,
-};
+use frame_support::{dispatch::DispatchResult, traits::Get, weights::Weight};
 use frame_system::ensure_signed;
-use log::info;
-use scale_info::TypeInfo;
-use sp_runtime::traits::{Bounded, SaturatedConversion, Saturating, StaticLookup};
+use sp_runtime::traits::{Saturating, StaticLookup};
 
 pub use pallet::*;
 
@@ -62,12 +55,7 @@ pub use weights::*;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
-const LOG_TARGET: &str = "runtime::pallet-balance-game";
-
-/// A type alias for the balance type from this pallet's point of view.
-type BalanceOf<T> = <T as pallet_balances::Config>::Balance;
 type AccountIdLookupOf<T> = <<T as frame_system::Config>::Lookup as StaticLookup>::Source;
-const MILLICENTS: u32 = 1_000_000_000;
 
 // <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/polkadot_sdk/frame_runtime/index.html>
 // <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html>
@@ -75,64 +63,6 @@ const MILLICENTS: u32 = 1_000_000_000;
 // To see a full list of `pallet` macros and their use cases, see:
 // <https://paritytech.github.io/polkadot-sdk/master/pallet_example_kitchensink/index.html>
 // <https://paritytech.github.io/polkadot-sdk/master/frame_support/pallet_macros/index.html>
-
-// A custom weight calculator tailored for the dispatch call `set_temporary_balance()`. This actually examines
-// the arguments and makes a decision based upon them.
-//
-// The `WeightData<T>` trait has access to the arguments of the dispatch that it wants to assign a
-// weight to. Nonetheless, the trait itself cannot make any assumptions about what the generic type
-// of the arguments (`T`) is. Based on our needs, we could replace `T` with a more concrete type
-// while implementing the trait. The `pallet::weight` expects whatever implements `WeighData<T>` to
-// replace `T` with a tuple of the dispatch arguments. This is exactly how we will craft the
-// implementation below.
-//
-// The rules of `WeightForSetTemporaryBalance` are as follows:
-// - The final weight of each dispatch is calculated as the argument of the call multiplied by the
-//   parameter given to the `WeightForSetTemporaryBalance`'s constructor.
-// - assigns a dispatch class `operational` if the argument of the call is more than 1000.
-//
-// More information can be read at:
-//   - https://docs.substrate.io/main-docs/build/tx-weights-fees/
-//
-// Manually configuring weight is an advanced operation and what you really need may well be
-//   fulfilled by running the benchmarking toolchain. Refer to `benchmarking.rs` file.
-struct WeightForSetTemporaryBalance<T: pallet_balances::Config>(BalanceOf<T>);
-
-impl<T: pallet_balances::Config> WeighData<(&AccountIdLookupOf<T>, &BalanceOf<T>)>
-    for WeightForSetTemporaryBalance<T>
-{
-    fn weigh_data(&self, target: (&AccountIdLookupOf<T>, &BalanceOf<T>)) -> Weight {
-        let multiplier = self.0;
-        // *target.1 is the amount passed into the extrinsic
-        let cents = *target.1 / <BalanceOf<T>>::from(MILLICENTS);
-        Weight::from_parts((cents * multiplier).saturated_into::<u64>(), 0)
-    }
-}
-
-impl<T: pallet_balances::Config> ClassifyDispatch<(&AccountIdLookupOf<T>, &BalanceOf<T>)>
-    for WeightForSetTemporaryBalance<T>
-{
-    fn classify_dispatch(&self, target: (&AccountIdLookupOf<T>, &BalanceOf<T>)) -> DispatchClass {
-        // current_balance + target amount passed into the extrinsic.
-        if self.0.saturating_add(*target.1) > <BalanceOf<T>>::from(1000u32) {
-            DispatchClass::Operational
-        } else {
-            DispatchClass::Normal
-        }
-    }
-}
-
-impl<T: pallet_balances::Config> PaysFee<(&AccountIdLookupOf<T>, &BalanceOf<T>)>
-    for WeightForSetTemporaryBalance<T>
-{
-    fn pays_fee(&self, target: (&AccountIdLookupOf<T>, &BalanceOf<T>)) -> Pays {
-        if *target.1 > <BalanceOf<T>>::from(1000u32) {
-            Pays::Yes
-        } else {
-            Pays::No
-        }
-    }
-}
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -204,52 +134,6 @@ pub mod pallet {
             increase_by: T::Balance,
         ) -> DispatchResult {
             Self::do_accumulate_temporary_balance(who, increase_by)
-        }
-
-        /// A privileged call to set a user's temporary balance to a specific value.
-        ///
-        /// # Arguments
-        /// - `origin`: The origin of the call (must be root).
-        /// - `who`: The account whose temporary balance will be set.
-        /// - `new_value`: The new value for the temporary balance.
-        ///
-        /// # Errors
-        /// - `ValueAlreadySet`: If the user already has a temporary balance.
-        ///
-        /// # Events
-        /// - `SetTemporaryBalance`: Emitted when the temporary balance is successfully set.
-        #[pallet::call_index(1)]
-        #[pallet::weight(WeightForSetTemporaryBalance::<T>(<BalanceOf<T>>::from(100u32)))]
-        pub fn set_temporary_balance(
-            origin: OriginFor<T>,
-            who: AccountIdLookupOf<T>,
-            #[pallet::compact] new_value: T::Balance,
-        ) -> DispatchResult {
-            ensure_root(origin)?;
-            let who = T::Lookup::lookup(who)?;
-
-            let set_temporary_balance_key: u32 = 1;
-
-            // Assert no value exists for the user.
-            ensure!(
-                TemporaryBalance::<T>::get(who.clone()).is_none(),
-                Error::<T>::ValueAlreadySet
-            );
-
-            // Print out log or debug message in the console via log::{error, warn, info, debug,
-            // trace}, accepting format strings similar to `println!`.
-            // https://paritytech.github.io/substrate/master/sp_io/logging/fn.log.html
-            // https://paritytech.github.io/substrate/master/frame_support/constant.LOG_TARGET.html
-            info!("New value is now: {:?}", new_value);
-
-            // Put the new value into storage.
-            <TemporaryBalance<T>>::insert(who, new_value);
-            Self::record_operation(set_temporary_balance_key)?;
-
-            Self::deposit_event(Event::SetTemporaryBalance { balance: new_value });
-
-            // All good, no refund.
-            Ok(())
         }
 
         /// Clears the temporary balance for a specified user.
@@ -440,16 +324,6 @@ impl<T: Config> Pallet<T> {
         // Ensure that the origin is signed, meaning the sender is an account.
         let who = ensure_signed(origin)?;
         let accumulate_key: u32 = 0;
-
-        // Check if the sender already has an entry in the TemporaryBalance map.
-        // We want to ensure the sender is the owner of the entry.
-        let current_temporary_balance = TemporaryBalance::<T>::get(&who);
-
-        if current_temporary_balance.is_none() {
-            // If no entry exists, we can create a new one or return an error
-            // indicating the sender does not own an entry.
-            return Err(Error::<T>::NoEntryForSender.into());
-        }
 
         Self::record_operation(accumulate_key)?;
 

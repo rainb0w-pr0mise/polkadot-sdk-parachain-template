@@ -1,91 +1,35 @@
 use crate::{mock::*, Error, Event, *};
 use frame_support::traits::OnFinalize;
 use frame_support::{assert_noop, assert_ok};
-use frame_system::pallet_prelude::BlockNumberFor;
 
 #[test]
-fn set_temporary_balance_works() {
+fn accumulate_temporary_balance_works() {
     new_test_ext().execute_with(|| {
-        // Ensure that setting a temporary balance value works
-        assert_ok!(BalanceGame::set_temporary_balance(
-            RuntimeOrigin::root(),
-            1,
-            100
-        ));
-        assert_eq!(TemporaryBalance::<Test>::get(1), Some(100));
-
-        // Ensure that the event is emitted
-        System::assert_last_event(Event::SetTemporaryBalance { balance: 100 }.into());
-    });
-}
-
-#[test]
-fn set_dummy_fails_if_value_already_set() {
-    new_test_ext().execute_with(|| {
-        // Set a temporary value for account 1
-        assert_ok!(BalanceGame::set_temporary_balance(
-            RuntimeOrigin::root(),
-            1,
-            100
-        ));
-
-        // Ensure that setting a dummy value again fails
-        assert_noop!(
-            BalanceGame::set_temporary_balance(RuntimeOrigin::root(), 1, 200),
-            Error::<Test>::ValueAlreadySet
-        );
-    });
-}
-
-#[test]
-fn accumulate_dummy_works() {
-    new_test_ext().execute_with(|| {
-        // Set a temporary balance for account 1
-        assert_ok!(BalanceGame::set_temporary_balance(
-            RuntimeOrigin::root(),
-            1,
-            100
-        ));
-
         // Accumulate temporary balance
         assert_ok!(BalanceGame::accumulate_temporary_balance(
             RuntimeOrigin::signed(1),
-            50
+            150
         ));
         assert_eq!(TemporaryBalance::<Test>::get(1), Some(150));
 
-        System::assert_last_event(Event::AccumulateTemporaryBalance { balance: 50 }.into());
-    });
-}
-
-#[test]
-fn accumulate_temporary_balance_fails_if_no_entry_for_sender() {
-    new_test_ext().execute_with(|| {
-        // Ensure that accumulating temporary balance fails if no entry exists for the sender
-        assert_noop!(
-            BalanceGame::accumulate_temporary_balance(RuntimeOrigin::signed(1), 50),
-            Error::<Test>::NoEntryForSender
-        );
+        System::assert_last_event(Event::OperationCountUpdated(0, 1).into());
     });
 }
 
 #[test]
 fn update_balance_works() {
     new_test_ext().execute_with(|| {
-        // Set temporary balance for account 1
-        assert_ok!(BalanceGame::set_temporary_balance(
-            RuntimeOrigin::root(),
-            1,
-            100
+        assert_ok!(BalanceGame::accumulate_temporary_balance(
+            RuntimeOrigin::signed(1),
+            150
         ));
-
         // Update the balance
         assert_ok!(BalanceGame::update_balance(RuntimeOrigin::signed(1)));
-        assert_eq!(UserBalances::<Test>::get(1), Some(100));
-        assert_eq!(TotalBalance::<Test>::get(), 100);
+        assert_eq!(UserBalances::<Test>::get(1), Some(150));
+        assert_eq!(TotalBalance::<Test>::get(), 150);
 
         // Ensure that the event is emitted
-        System::assert_last_event(Event::BalanceUpdated(1, 100).into());
+        System::assert_last_event(Event::BalanceUpdated(1, 150).into());
     });
 }
 
@@ -103,7 +47,10 @@ fn update_balance_fails_if_temporary_balance_not_found() {
 #[test]
 fn clear_temporary_balance_works() {
     new_test_ext().execute_with(|| {
-        // Set temporary balance for account 1
+        assert_ok!(BalanceGame::accumulate_temporary_balance(
+            RuntimeOrigin::signed(1),
+            150
+        ));
 
         // Clear the temporary balance
         assert_ok!(BalanceGame::clear_temporary_balance(
@@ -117,10 +64,8 @@ fn clear_temporary_balance_works() {
 #[test]
 fn check_win_condition_in_on_finalize_works() {
     new_test_ext().execute_with(|| {
-        // Set temporary balance for account 1
-        assert_ok!(BalanceGame::set_temporary_balance(
-            RuntimeOrigin::root(),
-            1,
+        assert_ok!(BalanceGame::accumulate_temporary_balance(
+            RuntimeOrigin::signed(1),
             1_000_000_000
         ));
 
@@ -138,13 +83,6 @@ fn check_win_condition_in_on_finalize_works() {
 #[test]
 fn operation_limit_exceeded() {
     new_test_ext().execute_with(|| {
-        // Set temporary balance for account 1
-        assert_ok!(BalanceGame::set_temporary_balance(
-            RuntimeOrigin::root(),
-            1,
-            100
-        ));
-
         // Perform operations until the limit is reached
         for _ in 0..31 {
             assert_ok!(BalanceGame::accumulate_temporary_balance(
